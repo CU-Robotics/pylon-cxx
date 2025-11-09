@@ -261,6 +261,7 @@ struct PylonLibVersion {
     pylon_suffix: String,
 }
 
+// implement ordering for versions: GCC major > GCC minor > pylon version
 impl Ord for PylonLibVersion {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match self.gcc_major.cmp(&other.gcc_major) {
@@ -275,12 +276,15 @@ impl Ord for PylonLibVersion {
     }
 }
 
+// just copy full ordering for partial ordering implementation
 impl PartialOrd for PylonLibVersion {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
+// compare suffixes: v<A>_<B>_<C>_...
+// always assume preceding version numbers take precedence
 fn compare_pylon_suffix(a: &str, b: &str) -> std::cmp::Ordering {
     if a == b {
         return std::cmp::Ordering::Equal;
@@ -294,6 +298,7 @@ fn compare_pylon_suffix(a: &str, b: &str) -> std::cmp::Ordering {
         return std::cmp::Ordering::Greater;
     }
 
+    // split suffix string into version parts
     let parse_suffix = |s: &str| -> Vec<u8> {
         s.trim_start_matches('v')
             .split('_')
@@ -304,6 +309,7 @@ fn compare_pylon_suffix(a: &str, b: &str) -> std::cmp::Ordering {
     let a_parts = parse_suffix(a);
     let b_parts = parse_suffix(b);
 
+    // zip version parts and compare at each index, decreasing priority
     for i in 0..std::cmp::max(a_parts.len(), b_parts.len()) {
         let a_val = a_parts.get(i).copied().unwrap_or(0);
         let b_val = b_parts.get(i).copied().unwrap_or(0);
@@ -314,9 +320,11 @@ fn compare_pylon_suffix(a: &str, b: &str) -> std::cmp::Ordering {
         }
     }
 
+    // no differences found
     std::cmp::Ordering::Equal
 }
 
+// get auto implementation for ToString
 impl std::fmt::Display for PylonLibVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if self.pylon_suffix.is_empty() {
@@ -327,9 +335,11 @@ impl std::fmt::Display for PylonLibVersion {
     }
 }
 
+// find acceptable common pylon library version under /opt/pylon/lib(64)
 fn find_common_lib_version_linux(lib_dir: &std::path::Path, lib_names: &[&str]) -> Option<String> {
     let mut versions_by_lib: Vec<Vec<PylonLibVersion>> = Vec::new();
 
+    // get all versions for each library
     for lib_name in lib_names {
         let versions = find_all_lib_versions_linux(lib_dir, lib_name);
 
@@ -344,6 +354,7 @@ fn find_common_lib_version_linux(lib_dir: &std::path::Path, lib_names: &[&str]) 
     let first_lib_versions = &versions_by_lib[0];
     let mut common_versions: Vec<PylonLibVersion> = Vec::new();
 
+    // see if a common version can be found across all libraries
     for version in first_lib_versions {
         let exists_in_all = versions_by_lib[1..].iter().all(|lib_versions| {
             lib_versions.contains(version)
@@ -359,17 +370,21 @@ fn find_common_lib_version_linux(lib_dir: &std::path::Path, lib_names: &[&str]) 
         eprintln!("\t{lib_name}: {:?}", versions_by_lib[i]);
     }
 
+    // if no common version found, panic
     if common_versions.is_empty() {
         eprintln!("ERROR - no common version found across all libraries");
         return None;
     }
 
+    // sort by highest version, using Ord implementation for pylon versions
     common_versions.sort();
     common_versions.reverse();
 
+    // just take the highest version and return it
     Some(common_versions[0].to_string())
 }
 
+// find all pylon versions for a particular library
 fn find_all_lib_versions_linux(lib_dir: &std::path::Path, lib_name: &str) -> Vec<PylonLibVersion> {
     let mut versions = Vec::new();
 
@@ -393,6 +408,7 @@ fn find_all_lib_versions_linux(lib_dir: &std::path::Path, lib_name: &str) -> Vec
     versions
 }
 
+// parse version string into a PylonLibVersion
 fn parse_lib_version_linux(filename: &str, prefix: &str) -> Option<PylonLibVersion> {
     let version_part = filename
         .strip_prefix(prefix)?
@@ -403,6 +419,7 @@ fn parse_lib_version_linux(filename: &str, prefix: &str) -> Option<PylonLibVersi
         return None;
     }
 
+    // get GCC parts
     let gcc_parts: Vec<&str> = parts[0].split('_').collect();
     if gcc_parts.len() < 2 {
         return None;
