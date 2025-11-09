@@ -69,7 +69,7 @@ fn main() {
 
         let dir_str = lib_dir.to_str().unwrap();
 
-        println!("cargo:rustc-link-search=native={}", dir_str);
+        println!("cargo:rustc-link-search=native={dir_str}");
         println!("cargo:rustc-link-lib=pylonc");
 
         // The Basler docs want the rest of these libraries to be automatically
@@ -163,13 +163,23 @@ fn main() {
         } else {
             assert_eq!(pylon_major_version, 6);
 
-            // The following are for Pylon 6.1 and may need to be updated for other versions.
-            println!("cargo:rustc-link-lib=GenApi_gcc_v3_1_Basler_pylon");
-            println!("cargo:rustc-link-lib=GCBase_gcc_v3_1_Basler_pylon");
-            println!("cargo:rustc-link-lib=Log_gcc_v3_1_Basler_pylon");
-            println!("cargo:rustc-link-lib=MathParser_gcc_v3_1_Basler_pylon");
-            println!("cargo:rustc-link-lib=XmlParser_gcc_v3_1_Basler_pylon");
-            println!("cargo:rustc-link-lib=NodeMapData_gcc_v3_1_Basler_pylon");
+            let lib_names = [
+                "GenApi", "GCBase", "Log", "MathParser", "XmlParser", "NodeMapData"
+            ];
+
+            let common_version = find_common_lib_version_linux(&lib_dir, &lib_names)
+                .unwrap_or_else(|| panic!(
+                    "could not find common library version for all required libraries: {}",
+                    lib_dir.display()
+                ));
+
+            eprintln!("INFO - using common pylon library version: {common_version}");
+
+            for lib_name in &lib_names {
+                let link_name = format!("{lib_name}_{common_version}");
+                eprintln!("INFO - found pylon library: {link_name}");
+                println!("cargo:rustc-link-lib={link_name}");
+            }
         }
     }
 
@@ -242,4 +252,172 @@ fn main() {
     }
 
     build.compile("pyloncxxrs");
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PylonLibVersion {
+    gcc_major: u8,
+    gcc_minor: u8,
+    pylon_suffix: String,
+}
+
+impl Ord for PylonLibVersion {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.gcc_major.cmp(&other.gcc_major) {
+            std::cmp::Ordering::Equal => {
+                match self.gcc_minor.cmp(&other.gcc_minor) {
+                    std::cmp::Ordering::Equal => compare_pylon_suffix(&self.pylon_suffix, &other.pylon_suffix),
+                    ord => ord,
+                }
+            },
+            ord => ord,
+        }
+    }
+}
+
+impl PartialOrd for PylonLibVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn compare_pylon_suffix(a: &str, b: &str) -> std::cmp::Ordering {
+    if a == b {
+        return std::cmp::Ordering::Equal;
+    }
+
+    if a.is_empty() {
+        return std::cmp::Ordering::Less;
+    }
+
+    if b.is_empty() {
+        return std::cmp::Ordering::Greater;
+    }
+
+    let parse_suffix = |s: &str| -> Vec<u8> {
+        s.trim_start_matches('v')
+            .split('_')
+            .filter_map(|n| n.parse::<u8>().ok())
+            .collect()
+    };
+
+    let a_parts = parse_suffix(a);
+    let b_parts = parse_suffix(b);
+
+    for i in 0..std::cmp::max(a_parts.len(), b_parts.len()) {
+        let a_val = a_parts.get(i).copied().unwrap_or(0);
+        let b_val = b_parts.get(i).copied().unwrap_or(0);
+
+        match a_val.cmp(&b_val) {
+            std::cmp::Ordering::Equal => continue,
+            ord => return ord,
+        }
+    }
+
+    std::cmp::Ordering::Equal
+}
+
+impl std::fmt::Display for PylonLibVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if self.pylon_suffix.is_empty() {
+            write!(f, "gcc_v{}_{}_Basler_pylon", self.gcc_major, self.gcc_minor)
+        } else {
+            write!(f, "gcc_v{}_{}_Basler_pylon_{}", self.gcc_major, self.gcc_minor, self.pylon_suffix)
+        }
+    }
+}
+
+fn find_common_lib_version_linux(lib_dir: &std::path::Path, lib_names: &[&str]) -> Option<String> {
+    let mut versions_by_lib: Vec<Vec<PylonLibVersion>> = Vec::new();
+
+    for lib_name in lib_names {
+        let versions = find_all_lib_versions_linux(lib_dir, lib_name);
+
+        if versions.is_empty() {
+            eprintln!("WARNING - no versions found for {lib_name}");
+            return None;
+        }
+
+        versions_by_lib.push(versions);
+    }
+
+    let first_lib_versions = &versions_by_lib[0];
+    let mut common_versions: Vec<PylonLibVersion> = Vec::new();
+
+    for version in first_lib_versions {
+        let exists_in_all = versions_by_lib[1..].iter().all(|lib_versions| {
+            lib_versions.contains(version)
+        });
+
+        if exists_in_all {
+            common_versions.push(version.clone());
+        }
+    }
+
+    eprintln!("INFO - available pylon versions by library:");
+    for (i, lib_name) in lib_names.iter().enumerate() {
+        eprintln!("\t{lib_name}: {:?}", versions_by_lib[i]);
+    }
+
+    if common_versions.is_empty() {
+        eprintln!("ERROR - no common version found across all libraries");
+        return None;
+    }
+
+    common_versions.sort();
+    common_versions.reverse();
+
+    Some(common_versions[0].to_string())
+}
+
+fn find_all_lib_versions_linux(lib_dir: &std::path::Path, lib_name: &str) -> Vec<PylonLibVersion> {
+    let mut versions = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(lib_dir) {
+        // names start with lib<lib_name>_gcc_v*
+        let lib_prefix = format!("lib{lib_name}_gcc_v");
+
+        for entry in entries.flatten() {
+            let filename = entry.file_name();
+            let filename = filename.to_str().unwrap_or("");
+
+            // try to match pattern: lib<lib_name>_gcc_v<M>_<m>_Basler_pylon(_v<n>).so
+            if filename.starts_with(&lib_prefix) && filename.contains("_Basler_pylon") && filename.ends_with(".so") {
+                if let Some(version) = parse_lib_version_linux(filename, &lib_prefix) {
+                    versions.push(version);
+                }
+            }
+        }
+    }
+
+    versions
+}
+
+fn parse_lib_version_linux(filename: &str, prefix: &str) -> Option<PylonLibVersion> {
+    let version_part = filename
+        .strip_prefix(prefix)?
+        .strip_suffix(".so")?;
+
+    let parts: Vec<&str> = version_part.split("_Basler_pylon").collect();
+    if parts.is_empty() {
+        return None;
+    }
+
+    let gcc_parts: Vec<&str> = parts[0].split('_').collect();
+    if gcc_parts.len() < 2 {
+        return None;
+    }
+
+    // extract GCC major/minor versions
+    let gcc_major = gcc_parts[0].parse::<u8>().ok()?;
+    let gcc_minor = gcc_parts[1].parse::<u8>().ok()?;
+    
+    // if there is a suffix version, extract that too
+    let pylon_suffix = if parts.len() > 1 && !parts[1].is_empty() {
+        parts[1].trim_start_matches('_').to_string()
+    } else {
+        String::new()
+    };
+
+    Some(PylonLibVersion { gcc_major, gcc_minor, pylon_suffix })
 }

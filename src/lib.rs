@@ -105,6 +105,8 @@ mod ffi {
         type CCommandParameter;
 
         type MyNodeMap;
+
+        #[cfg(target_os = "windows")]
         type WaitObject;
 
         fn PylonInitialize();
