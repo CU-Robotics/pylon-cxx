@@ -87,11 +87,17 @@ mod ffi {
         UpcomingImage,
     }
 
+    extern "Rust" {
+        type BufferFactoryPolicy;
+        fn allocate(self: &mut BufferFactoryPolicy, size: usize) -> usize;
+    }
+
     unsafe extern "C++" {
         include!("pylon/PylonIncludes.h");
         include!("pylon/gige/BaslerGigECamera.h");
         include!("catcher.h");
         include!("pylon-cxx-rs.h");
+        include!("buffer_factory.h");
 
         type CInstantCamera;
         type CDeviceInfo;
@@ -108,6 +114,11 @@ mod ffi {
 
         #[cfg(target_os = "windows")]
         type WaitObject;
+
+        // IBufferFactory
+        type BufferFactoryShim;
+        fn create_buffer_factory(policy: Box<BufferFactoryPolicy>) -> UniquePtr<BufferFactoryShim>;
+        fn instant_camera_set_buffer_factory(camera: &UniquePtr<CInstantCamera>, shim: &UniquePtr<BufferFactoryShim>) -> Result<()>;
 
         fn PylonInitialize();
         fn PylonTerminate(ShutDownLogging: bool);
@@ -874,5 +885,41 @@ fn path_to_string<P: AsRef<std::path::Path>>(path: P) -> PylonResult<String> {
             #[cfg(feature = "backtrace")]
             backtrace: Backtrace::capture(),
         }),
+    }
+}
+
+pub struct BufferFactoryPolicy {
+    allocator: Box<dyn FnMut(usize) -> usize + Send>,
+}
+
+impl BufferFactoryPolicy {
+    pub fn new(f: impl FnMut(usize) -> usize + Send + 'static) -> Box<Self> {
+        Box::new(Self { allocator: Box::new(f) })
+    }
+
+    fn allocate(&mut self, size: usize) -> usize {
+        (self.allocator)(size)
+    }
+}
+
+pub struct BufferFactory(cxx::UniquePtr<ffi::BufferFactoryShim>);
+
+impl BufferFactory {
+    pub fn new(policy: Box<BufferFactoryPolicy>) -> Self {
+        Self(ffi::create_buffer_factory(policy))        
+    }
+}
+
+impl<'a> InstantCamera<'a> {
+    // IBufferFactory
+    pub fn set_buffer_factory(&self, factory: BufferFactory) -> PylonResult<()> {
+        ffi::instant_camera_set_buffer_factory(&self.inner, &factory.0).into_rust()
+    }
+}
+
+impl<'a> Drop for InstantCamera<'a> {
+    fn drop(&mut self) {
+        let null = cxx::UniquePtr::<ffi::BufferFactoryShim>::null();
+        let _ = ffi::instant_camera_set_buffer_factory(&self.inner, &null);
     }
 }
