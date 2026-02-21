@@ -2,6 +2,7 @@
 
 #[cfg(feature = "backtrace")]
 use std::backtrace::Backtrace;
+use std::marker::PhantomData;
 
 #[cfg(all(not(target_os = "windows"), feature = "stream"))]
 /// DEPRECATED: the `stream_unix` module exposes no public items and should not be used externally.
@@ -387,6 +388,8 @@ pub struct InstantCamera<'a> {
     #[cfg(all(target_os = "windows", feature = "stream"))]
     wait_thread: RefCell<Option<JoinHandle<()>>>,
 
+    _factory: PhantomData<&'a BufferFactory>,
+
     /// A reference to the Pylon library. This should be the last field in the
     /// struct so that `self._lib` is dropped after `self.inner`.
     _lib: &'a Pylon,
@@ -597,6 +600,7 @@ impl<'a> InstantCamera<'a> {
     pub fn new(lib: &'a Pylon, inner: cxx::UniquePtr<ffi::CInstantCamera>) -> Self {
         InstantCamera {
             _lib: lib,
+            _factory: PhantomData,
             inner,
             #[cfg(all(not(target_os = "windows"), feature = "stream"))]
             fd: RefCell::new(None),
@@ -912,7 +916,7 @@ impl BufferFactory {
 
 impl<'a> InstantCamera<'a> {
     // IBufferFactory
-    pub fn set_buffer_factory(&self, factory: BufferFactory) -> PylonResult<()> {
+    pub fn set_buffer_factory(&self, factory: &'a BufferFactory) -> PylonResult<()> {
         ffi::instant_camera_set_buffer_factory(&self.inner, &factory.0).into_rust()
     }
 }

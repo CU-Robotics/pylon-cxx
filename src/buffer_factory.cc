@@ -5,7 +5,9 @@
 
 namespace Pylon {
 
-BufferFactoryShim::BufferFactoryShim(rust::Box<BufferFactoryPolicy> policy) : policy_(std::move(policy)) {}
+BufferFactoryShim::BufferFactoryShim(rust::Box<BufferFactoryPolicy> policy) : policy_(std::move(policy)) {
+    printf("TESTING CONSTRUCTOR\n");
+}
 
 void BufferFactoryShim::AllocateBuffer(std::size_t buffer_size, void** created_buffer, std::intptr_t& buffer_ctx) {
     printf("TESTING\n");
