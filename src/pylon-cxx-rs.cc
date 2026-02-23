@@ -474,6 +474,11 @@ namespace Pylon
         return rust::String(device_info->GetModelName());
     }
 
+    rust::String device_info_get_serial_number(const std::unique_ptr<CDeviceInfo> &device_info) 
+    {
+        return rust::String(device_info->GetSerialNumber());
+    }
+
     #if defined(FEATURE_STREAM_WINDOWS)
     bool wait_object_wait(const std::unique_ptr<WaitObject> &wait_object, uint64_t timeout) {
         return wait_object->Wait(timeout);

@@ -259,6 +259,8 @@ mod ffi {
             name: &str,
         ) -> Result<String>;
         fn device_info_get_model_name(device_info: &UniquePtr<CDeviceInfo>) -> Result<String>;
+        fn device_info_get_serial_number(device_info: &UniquePtr<CDeviceInfo>) -> Result<String>;
+
         #[cfg(all(target_os = "windows", feature = "stream"))]
         fn wait_object_wait(wait_object: &UniquePtr<WaitObject>, timeout: u64) -> Result<bool>;
     }
@@ -849,6 +851,10 @@ impl HasProperties for DeviceInfo {
 impl DeviceInfo {
     pub fn model_name(&self) -> PylonResult<String> {
         ffi::device_info_get_model_name(&self.inner).into_rust()
+    }
+
+    pub fn serial_number(&self) -> PylonResult<String> {
+        ffi::device_info_get_serial_number(&self.inner).into_rust()
     }
 }
 
