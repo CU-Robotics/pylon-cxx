@@ -2,8 +2,6 @@
 
 #[cfg(feature = "backtrace")]
 use std::backtrace::Backtrace;
-use std::marker::PhantomData;
-use std::time::Instant;
 
 #[cfg(all(not(target_os = "windows"), feature = "stream"))]
 /// DEPRECATED: the `stream_unix` module exposes no public items and should not be used externally.
