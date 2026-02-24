@@ -386,7 +386,6 @@ pub struct InstantCamera<'a> {
 
 impl Drop for InstantCamera<'_> {
     fn drop(&mut self) {
-        println!("destroying camera");
         ffi::instant_camera_destroy_device(&self.inner);
     }
 }
