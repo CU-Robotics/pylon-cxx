@@ -155,6 +155,7 @@ mod ffi {
             grab_result: &mut UniquePtr<CGrabResultPtr>,
             timeout_handling: TimeoutHandling,
         ) -> Result<bool>;
+        fn instant_camera_destroy_device(camera: &UniquePtr<CInstantCamera>);
 
         fn instant_camera_get_node_map(camera: &UniquePtr<CInstantCamera>) -> Result<&MyNodeMap>;
         fn instant_camera_get_tl_node_map(camera: &UniquePtr<CInstantCamera>)
@@ -381,6 +382,13 @@ pub struct InstantCamera<'a> {
     /// A reference to the Pylon library. This should be the last field in the
     /// struct so that `self._lib` is dropped after `self.inner`.
     _lib: &'a Pylon,
+}
+
+impl Drop for InstantCamera<'_> {
+    fn drop(&mut self) {
+        println!("destroying camera");
+        ffi::instant_camera_destroy_device(&self.inner);
+    }
 }
 
 /// Wrap the `GenApi::INodeMap` type.

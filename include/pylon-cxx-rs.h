@@ -56,6 +56,7 @@ namespace Pylon
     #endif
 
     bool instant_camera_retrieve_result(const std::unique_ptr<CInstantCamera> &, uint32_t, std::unique_ptr<CGrabResultPtr> &, TimeoutHandling);
+    void instant_camera_destroy_device(const std::unique_ptr<CInstantCamera> &);
 
     std::unique_ptr<CBooleanParameter> node_map_get_boolean_parameter(const MyNodeMap&, rust::Str);
     std::unique_ptr<CIntegerParameter> node_map_get_integer_parameter(const MyNodeMap&, rust::Str);

@@ -209,6 +209,10 @@ namespace Pylon
         return camera->RetrieveResult(timeout, *result, eth);
     }
 
+    void instant_camera_destroy_device(const std::unique_ptr<CInstantCamera> &camera) {
+        camera->DestroyDevice();
+    }
+
     std::unique_ptr<CBooleanParameter> node_map_get_boolean_parameter(const MyNodeMap& node_map, rust::Str c_name)
     {
         GenApi::INodeMap& nodemap = (GenApi::INodeMap&)node_map;
