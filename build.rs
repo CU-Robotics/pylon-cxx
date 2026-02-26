@@ -12,11 +12,14 @@ fn main() {
     println!("cargo:rerun-if-changed=include/catcher.h");
     println!("cargo:rerun-if-changed=include/pylon-cxx-rs.h");
     println!("cargo:rerun-if-changed=src/pylon-cxx-rs.cc");
+    println!("cargo:rerun-if-changed=include/buffer_factory.h");
+    println!("cargo:rerun-if-changed=src/buffer_factory.h");
 
     let mut build = cxx_build::bridge("src/lib.rs");
 
     build
         .file("src/pylon-cxx-rs.cc")
+        .file("src/buffer_factory.cc")
         .warnings(false)
         .cpp(true)
         .include("include");

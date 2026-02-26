@@ -87,11 +87,17 @@ mod ffi {
         UpcomingImage,
     }
 
+    extern "Rust" {
+        type BufferFactoryPolicy;
+        fn allocate(self: &mut BufferFactoryPolicy, size: usize) -> usize;
+    }
+
     unsafe extern "C++" {
         include!("pylon/PylonIncludes.h");
         include!("pylon/gige/BaslerGigECamera.h");
         include!("catcher.h");
         include!("pylon-cxx-rs.h");
+        include!("buffer_factory.h");
 
         type CInstantCamera;
         type CDeviceInfo;
@@ -108,6 +114,11 @@ mod ffi {
 
         #[cfg(target_os = "windows")]
         type WaitObject;
+
+        // IBufferFactory
+        type BufferFactoryShim;
+        fn create_buffer_factory(policy: Box<BufferFactoryPolicy>) -> UniquePtr<BufferFactoryShim>;
+        fn instant_camera_set_buffer_factory(camera: &UniquePtr<CInstantCamera>, shim: &UniquePtr<BufferFactoryShim>) -> Result<()>;
 
         fn PylonInitialize();
         fn PylonTerminate(ShutDownLogging: bool);
@@ -330,19 +341,19 @@ pub unsafe fn terminate(shutdown_logging: bool) {
 // Since in C++ `CTlFactory::GetInstance()` merely returns a reference to
 // a static object, here we don't store anything and instead get the
 // reference when needed.
-pub struct TlFactory<'a> {
-    lib: &'a Pylon,
+pub struct TlFactory<'pylon> {
+    lib: &'pylon Pylon,
 }
 
-impl<'a> TlFactory<'a> {
-    pub fn instance(lib: &'a Pylon) -> Self {
+impl<'pylon> TlFactory<'pylon> {
+    pub fn instance(lib: &'pylon Pylon) -> Self {
         Self { lib }
     }
-    pub fn create_first_device(&self) -> PylonResult<InstantCamera<'a>> {
+    pub fn create_first_device(&self) -> PylonResult<InstantCamera<'pylon>> {
         let inner = ffi::tl_factory_create_first_device()?;
         Ok(InstantCamera::new(self.lib, inner))
     }
-    pub fn create_device(&self, device_info: &DeviceInfo) -> PylonResult<InstantCamera<'a>> {
+    pub fn create_device(&self, device_info: &DeviceInfo) -> PylonResult<InstantCamera<'pylon>> {
         let inner = ffi::tl_factory_create_device(&device_info.inner)?;
         Ok(InstantCamera::new(self.lib, inner))
     }
@@ -372,16 +383,19 @@ impl WaitObject {
 unsafe impl Send for WaitObject {}
 
 /// Wrap the CInstantCamera type
-pub struct InstantCamera<'a> {
+pub struct InstantCamera<'pylon> {
     inner: cxx::UniquePtr<ffi::CInstantCamera>,
     #[cfg(all(not(target_os = "windows"), feature = "stream"))]
     fd: RefCell<Option<tokio::io::unix::AsyncFd<std::os::unix::io::RawFd>>>,
     #[cfg(all(target_os = "windows", feature = "stream"))]
     wait_thread: RefCell<Option<JoinHandle<()>>>,
 
+    /// A reference to a buffer factory, which must outlive this camera to avoid problems
+    factory: Option<BufferFactory>,
+
     /// A reference to the Pylon library. This should be the last field in the
     /// struct so that `self._lib` is dropped after `self.inner`.
-    _lib: &'a Pylon,
+    _lib: &'pylon Pylon,
 }
 
 impl Drop for InstantCamera<'_> {
@@ -591,10 +605,11 @@ impl CommandNode {
 
 unsafe impl Send for InstantCamera<'_> {}
 
-impl<'a> InstantCamera<'a> {
-    pub fn new(lib: &'a Pylon, inner: cxx::UniquePtr<ffi::CInstantCamera>) -> Self {
+impl<'pylon> InstantCamera<'pylon> {
+    pub fn new(lib: &'pylon Pylon, inner: cxx::UniquePtr<ffi::CInstantCamera>) -> Self {
         InstantCamera {
             _lib: lib,
+            factory: None,
             inner,
             #[cfg(all(not(target_os = "windows"), feature = "stream"))]
             fd: RefCell::new(None),
@@ -694,32 +709,32 @@ impl<'a> InstantCamera<'a> {
 }
 
 /// These methods return the various node maps.
-impl<'a> InstantCamera<'a> {
-    pub fn node_map<'map>(&'a self) -> PylonResult<NodeMap<'map, 'a>> {
+impl<'pylon> InstantCamera<'pylon> {
+    pub fn node_map<'map>(&'pylon self) -> PylonResult<NodeMap<'map, 'pylon>> {
         Ok(NodeMap {
             inner: ffi::instant_camera_get_node_map(&self.inner)?,
             parent: std::marker::PhantomData,
         })
     }
-    pub fn tl_node_map<'map>(&'a self) -> PylonResult<NodeMap<'map, 'a>> {
+    pub fn tl_node_map<'map>(&'pylon self) -> PylonResult<NodeMap<'map, 'pylon>> {
         Ok(NodeMap {
             inner: ffi::instant_camera_get_tl_node_map(&self.inner)?,
             parent: std::marker::PhantomData,
         })
     }
-    pub fn stream_grabber_node_map<'map>(&'a self) -> PylonResult<NodeMap<'map, 'a>> {
+    pub fn stream_grabber_node_map<'map>(&'pylon self) -> PylonResult<NodeMap<'map, 'pylon>> {
         Ok(NodeMap {
             inner: ffi::instant_camera_get_stream_grabber_node_map(&self.inner)?,
             parent: std::marker::PhantomData,
         })
     }
-    pub fn event_grabber_node_map<'map>(&'a self) -> PylonResult<NodeMap<'map, 'a>> {
+    pub fn event_grabber_node_map<'map>(&'pylon self) -> PylonResult<NodeMap<'map, 'pylon>> {
         Ok(NodeMap {
             inner: ffi::instant_camera_get_event_grabber_node_map(&self.inner)?,
             parent: std::marker::PhantomData,
         })
     }
-    pub fn instant_camera_node_map<'map>(&'a self) -> PylonResult<NodeMap<'map, 'a>> {
+    pub fn instant_camera_node_map<'map>(&'pylon self) -> PylonResult<NodeMap<'map, 'pylon>> {
         Ok(NodeMap {
             inner: ffi::instant_camera_get_instant_camera_node_map(&self.inner)?,
             parent: std::marker::PhantomData,
@@ -887,5 +902,45 @@ fn path_to_string<P: AsRef<std::path::Path>>(path: P) -> PylonResult<String> {
             #[cfg(feature = "backtrace")]
             backtrace: Backtrace::capture(),
         }),
+    }
+}
+
+pub struct BufferFactoryPolicy {
+    allocator: Box<dyn FnMut(usize) -> usize + Send>,
+}
+
+impl BufferFactoryPolicy {
+    pub fn new(f: impl FnMut(usize) -> usize + Send + 'static) -> Box<Self> {
+        Box::new(Self { allocator: Box::new(f) })
+    }
+
+    fn allocate(&mut self, size: usize) -> usize {
+        (self.allocator)(size)
+    }
+}
+
+pub struct BufferFactory(cxx::UniquePtr<ffi::BufferFactoryShim>);
+
+impl BufferFactory {
+    pub fn new(policy: Box<BufferFactoryPolicy>) -> Self {
+        Self(ffi::create_buffer_factory(policy))        
+    }
+}
+
+impl<'pylon> InstantCamera<'pylon> {
+    // IBufferFactory
+    pub fn set_buffer_factory(&mut self, factory: BufferFactory) -> PylonResult<()> {
+        ffi::instant_camera_set_buffer_factory(&self.inner, &factory.0).into_rust()?;
+        self.factory = Some(factory);
+        Ok(())
+    }
+}
+
+impl<'pylon> Drop for InstantCamera<'pylon> {
+    fn drop(&mut self) {
+        // setting buffer factory to nullptr resets the allocator to the default implementation
+        // since the shim is attached with Cleanup_None, need to deregister the factory before C++ instance is deleted
+        let null = cxx::UniquePtr::<ffi::BufferFactoryShim>::null();
+        let _ = ffi::instant_camera_set_buffer_factory(&self.inner, &null);
     }
 }
