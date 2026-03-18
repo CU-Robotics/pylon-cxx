@@ -90,6 +90,7 @@ mod ffi {
     unsafe extern "C++" {
         include!("pylon/PylonIncludes.h");
         include!("pylon/gige/BaslerGigECamera.h");
+        include!("Base/GCString.h");
         include!("catcher.h");
         include!("pylon-cxx-rs.h");
 
@@ -103,6 +104,7 @@ mod ffi {
         type CFloatParameter;
         type CEnumParameter;
         type CCommandParameter;
+        type CStringParameter;
 
         type MyNodeMap;
 
@@ -201,6 +203,11 @@ mod ffi {
             name: &str,
         ) -> Result<UniquePtr<CCommandParameter>>;
 
+        fn node_map_get_string_parameter(
+            node_map: &MyNodeMap,
+            name: &str,
+        ) -> Result<UniquePtr<CStringParameter>>;
+
         fn boolean_node_get_value(boolean_node: &UniquePtr<CBooleanParameter>) -> Result<bool>;
         fn boolean_node_set_value(
             boolean_node: &UniquePtr<CBooleanParameter>,
@@ -228,6 +235,9 @@ mod ffi {
         fn enum_node_set_value(enum_node: &UniquePtr<CEnumParameter>, value: &str) -> Result<()>;
 
         fn command_node_execute(node: &UniquePtr<CCommandParameter>, verify: bool) -> Result<()>;
+
+        fn string_node_get_value(node: &UniquePtr<CStringParameter>) -> Result<UniquePtr<CxxString>>;
+        fn string_node_set_value(node: &UniquePtr<CStringParameter>, value: &str) -> Result<()>;
 
         fn new_grab_result_ptr() -> Result<UniquePtr<CGrabResultPtr>>;
         fn grab_result_grab_succeeded(grab_result: &UniquePtr<CGrabResultPtr>) -> Result<bool>;
@@ -450,6 +460,12 @@ impl<'map, 'parent: 'map> NodeMap<'map, 'parent> {
         let inner = ffi::node_map_get_command_parameter(self.inner, &name)?;
         Ok(CommandNode { name, inner })
     }
+
+    pub fn string_node(&self, name: &str) -> PylonResult<StringNode> {
+        let name = name.to_string();
+        let inner = ffi::node_map_get_string_parameter(self.inner, &name)?;
+        Ok(StringNode { name, inner })
+    }
 }
 
 /// Options passed to `start_grabbing`.
@@ -587,6 +603,26 @@ impl CommandNode {
     }
     pub fn execute(&self, verify: bool) -> PylonResult<()> {
         ffi::command_node_execute(&self.inner, verify).into_rust()
+    }
+}
+
+pub struct StringNode {
+    name: String,
+    inner: cxx::UniquePtr<ffi::CStringParameter>,
+}
+
+impl StringNode {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn value(&self) -> PylonResult<String> {
+        let cstr = ffi::string_node_get_value(&self.inner)?;
+        Ok(cstr.to_str()?.to_string())
+    }
+
+    pub fn set_value(&mut self, value: &str) -> PylonResult<()> {
+        ffi::string_node_set_value(&self.inner, value).into_rust()
     }
 }
 

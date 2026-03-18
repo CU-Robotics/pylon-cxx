@@ -63,6 +63,7 @@ namespace Pylon
     std::unique_ptr<CFloatParameter> node_map_get_float_parameter(const MyNodeMap&, rust::Str);
     std::unique_ptr<CEnumParameter> node_map_get_enum_parameter(const MyNodeMap&, rust::Str);
     std::unique_ptr<CCommandParameter> node_map_get_command_parameter(const MyNodeMap&, rust::Str);
+    std::unique_ptr<CStringParameter> node_map_get_string_parameter(const MyNodeMap&, rust::Str);
 
     bool boolean_node_get_value(const std::unique_ptr<CBooleanParameter> &);
     void boolean_node_set_value(const std::unique_ptr<CBooleanParameter> &, bool);
@@ -84,6 +85,9 @@ namespace Pylon
     void enum_node_set_value(const std::unique_ptr<CEnumParameter> &, rust::Str);
 
     void command_node_execute(const std::unique_ptr<CCommandParameter> &, bool);
+
+    std::unique_ptr<std::string> string_node_get_value(const std::unique_ptr<CStringParameter> &string_node);
+    void string_node_set_value(const std::unique_ptr<CStringParameter> &string_node, rust::Str c_value);
 
     std::unique_ptr<CGrabResultPtr> new_grab_result_ptr();
     bool grab_result_grab_succeeded(const std::unique_ptr<CGrabResultPtr> &);
