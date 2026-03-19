@@ -166,6 +166,7 @@ mod ffi {
             grab_result: &mut UniquePtr<CGrabResultPtr>,
             timeout_handling: TimeoutHandling,
         ) -> Result<bool>;
+        fn instant_camera_destroy_device(camera: &UniquePtr<CInstantCamera>);
 
         fn instant_camera_get_node_map(camera: &UniquePtr<CInstantCamera>) -> Result<&MyNodeMap>;
         fn instant_camera_get_tl_node_map(camera: &UniquePtr<CInstantCamera>)
@@ -270,6 +271,8 @@ mod ffi {
             name: &str,
         ) -> Result<String>;
         fn device_info_get_model_name(device_info: &UniquePtr<CDeviceInfo>) -> Result<String>;
+        fn device_info_get_serial_number(device_info: &UniquePtr<CDeviceInfo>) -> Result<String>;
+
         #[cfg(all(target_os = "windows", feature = "stream"))]
         fn wait_object_wait(wait_object: &UniquePtr<WaitObject>, timeout: u64) -> Result<bool>;
     }
@@ -393,6 +396,12 @@ pub struct InstantCamera<'pylon> {
     /// A reference to the Pylon library. This should be the last field in the
     /// struct so that `self._lib` is dropped after `self.inner`.
     _lib: &'pylon Pylon,
+}
+
+impl Drop for InstantCamera<'_> {
+    fn drop(&mut self) {
+        ffi::instant_camera_destroy_device(&self.inner);
+    }
 }
 
 /// Wrap the `GenApi::INodeMap` type.
@@ -864,6 +873,10 @@ impl HasProperties for DeviceInfo {
 impl DeviceInfo {
     pub fn model_name(&self) -> PylonResult<String> {
         ffi::device_info_get_model_name(&self.inner).into_rust()
+    }
+
+    pub fn serial_number(&self) -> PylonResult<String> {
+        ffi::device_info_get_serial_number(&self.inner).into_rust()
     }
 }
 
