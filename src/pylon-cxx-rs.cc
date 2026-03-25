@@ -248,6 +248,13 @@ namespace Pylon
         return std::make_unique<CCommandParameter>(CCommandParameter(nodemap, name));
     }
 
+    std::unique_ptr<CStringParameter> node_map_get_string_parameter(const MyNodeMap& node_map, rust::Str c_name)
+    {
+        GenApi::INodeMap& nodemap = (GenApi::INodeMap&)node_map;
+        Pylon::String_t name = Pylon::String_t(c_name.data(), c_name.length());
+        return std::make_unique<CStringParameter>(CStringParameter(nodemap, name));
+    }
+
     bool boolean_node_get_value(const std::unique_ptr<CBooleanParameter> &node)
     {
         return node->GetValue();
@@ -329,6 +336,17 @@ namespace Pylon
     void command_node_execute(const std::unique_ptr<CCommandParameter> &command_node, bool verify)
     {
         command_node->Execute(verify);
+    }
+
+    std::unique_ptr<std::string> string_node_get_value(const std::unique_ptr<CStringParameter> &string_node) 
+    {
+        return std::make_unique<std::string>(string_node->GetValue());
+    }    
+
+    void string_node_set_value(const std::unique_ptr<CStringParameter> &string_node, rust::Str c_value) 
+    {
+        GenICam::gcstring value(c_value.data(), c_value.length());
+        string_node->SetValue(value);
     }
 
     // CGrabResultPtr
